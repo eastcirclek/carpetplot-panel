@@ -19,16 +19,6 @@
           <spectrum-picker ng-model="ctrl.panel.color.nullColor" ng-change="ctrl.render()" ></spectrum-picker>
         </span>
     </div>
-    <div class="gf-form">
-      <label class="gf-form-label width-7">Min</label>
-      <input type="number" class="gf-form-input width-5" placeholder="auto" data-placement="right" bs-tooltip="'Min value for color scale.'"
-        ng-model="ctrl.panel.scale.min" ng-change="ctrl.render()" ng-model-onblur>
-    </div>
-    <div class="gf-form">
-      <label class="gf-form-label width-7">Max</label>
-      <input type="number" class="gf-form-input width-5" placeholder="auto" data-placement="right" bs-tooltip="'Max value for color scale.'"
-        ng-model="ctrl.panel.scale.max" ng-change="ctrl.render()" ng-model-onblur>
-    </div>
   </div>
 
   <div class="section gf-form-group">
@@ -48,38 +38,26 @@
       </div>
     </div>
     <div class="gf-form">
+      <label class="gf-form-label width-7">Processing</label>
+      <div class="gf-form-select-wrapper width-8">
+        <select class="input-small gf-form-input" ng-model="ctrl.panel.data.processing" ng-options="s for s in ['none', 'normalize', 'rank']" ng-change="ctrl.render()"></select>
+      </div>
+    </div>
+    <gf-form-switch class="gf-form" label-class="width-7" label="Percentage" checked="ctrl.panel.data.percentage" ng-if="ctrl.panel.data.processing && ctrl.panel.data.processing != 'rank'" on-change="ctrl.render()">
+    </gf-form-switch>
+    <div class="gf-form">
       <label class="gf-form-label width-7">Decimals</label>
       <input type="number" class="gf-form-input width-5" placeholder="auto" data-placement="right" bs-tooltip="'Max decimal precision for tooltip and legend.'"
         ng-model="ctrl.panel.data.decimals" ng-change="ctrl.render()" ng-model-onblur>
-    </div>
-    <div class="gf-form">
-      <label class="gf-form-label width-7">Unit</label>
-      <div class="gf-form-dropdown-typeahead width-12" ng-model="ctrl.panel.data.unitFormat" dropdown-typeahead2="editor.unitFormats"
-        dropdown-typeahead-on-select="editor.setUnitFormat($subItem)">
-      </div>
     </div>
   </div>
 
   <div class="section gf-form-group">
     <h5 class="section-heading">X Axis</h5>
-    <gf-form-switch class="gf-form" label-class="width-9" label="Show weekends" checked="ctrl.panel.xAxis.showWeekends" on-change="ctrl.render()">
-    </gf-form-switch>
-    <div class="gf-form">
-      <label class="gf-form-label width-9">Min bucket width</label>
-      <input type="number" class="gf-form-input width-5" placeholder="auto" data-placement="right" bs-tooltip="'Min bucket width in px to show weekend lines.'"
-        ng-model="ctrl.panel.xAxis.minBucketWidthToShowWeekends" ng-change="ctrl.render()" ng-model-onblur>
-    </div>
     <gf-form-switch class="gf-form" label-class="width-9" label="Show crosshair" checked="ctrl.panel.xAxis.showCrosshair" on-change="ctrl.render()">
     </gf-form-switch>
     <gf-form-switch class="gf-form" label-class="width-9" label="Hide labels" checked="ctrl.panel.xAxis.hideLabels" on-change="ctrl.render()">
     </gf-form-switch>
-    <div class="gf-form">
-      <label class="gf-form-label width-9">Label format</label>
-      <div class="gf-form-select-wrapper width-9">
-        <select class="input-small gf-form-input" ng-model="ctrl.panel.xAxis.labelFormat" ng-options="s.value as s.name for s in ctrl.xAxisLabelFormats"
-          ng-change="ctrl.render()"></select>
-      </div>
-    </div>
   </div>
 
   <div class="section gf-form-group">
@@ -97,8 +75,14 @@
   </div>
 
   <div class="section gf-form-group">
-    <h5 class="section-heading">Legend</h5>
-    <gf-form-switch class="gf-form" label-class="width-7" label="Show" checked="ctrl.panel.legend.show" on-change="ctrl.render()">
+    <h5 class="section-heading">Templating</h5>
+    <gf-form-switch class="gf-form" label-class="width-7" label="Update" checked="ctrl.panel.template.update" on-change="ctrl.render()">
     </gf-form-switch>
+    <div class="gf-form" ng-if="ctrl.panel.template.update === true">
+      <span class="gf-form-label width-7">Variable</span>
+      <div class="gf-from-select-wrapper width-10" >
+        <select class="gf-form-input" ng-model="ctrl.panel.template.variableToUpdate" ng-options="k for k in ctrl.variableNames" ng-change="ctrl.render()"></select>
+      </div>
+    </div>
   </div>
 </div>

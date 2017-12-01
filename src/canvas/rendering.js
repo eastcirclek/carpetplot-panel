@@ -7,34 +7,27 @@ import $ from 'jquery';
 
 import { getFragment } from '../fragments';
 import CarpetplotTooltip from './tooltip';
-import { valueFormatter } from '../formatting';
-import { labelFormats } from '../xAxisLabelFormats';
 
 const
-  DEFAULT_X_TICK_SIZE_PX = 100,
-  X_AXIS_TICK_MIN_SIZE = 100,
   Y_AXIS_TICK_PADDING = 5,
-  Y_AXIS_TICK_MIN_SIZE = 20,
   MIN_SELECTION_WIDTH = 2,
-  LEGEND_HEIGHT = 40,
-  LEGEND_TOP_MARGIN = 10;
+  STROKE_STYLE = 'white';
 
 export default function link(scope, elem, attrs, ctrl) {
   let data, panel, timeRange, carpet, canvas, context;
 
   const $carpet = elem.find('.carpetplot-panel');
-  const tooltip = new CarpetplotTooltip($carpet, scope);
+  const tooltip = new CarpetplotTooltip($carpet, scope, ctrl);
 
   const margin = { left: 25, right: 15, top: 10, bottom: 10 };
 
   let width, height,
     min, max,
-    xFrom, xTo, days,
+    xFrom, xTo,
     chartHeight, chartWidth,
     chartTop, chartBottom,
     xAxisHeight, yAxisWidth,
-    yScale, xScale,
-    legendHeight,
+    yScale, invertedYScale, xScale,
     colorScale, fragment,
     mouseUpHandler,
     originalPointColor,
@@ -42,10 +35,13 @@ export default function link(scope, elem, attrs, ctrl) {
     highlightedBucket,
     $canvas;
 
+  let targets;
+
   const selection = {
     active: false,
     x1: -1,
-    x2: -1
+    x2: -1,
+    y: -1
   };
 
   ctrl.events.on('render', () => {
@@ -56,14 +52,25 @@ export default function link(scope, elem, attrs, ctrl) {
   function addCarpetplot() {
     if (!data.data || !data.data[0]) { return; }
 
-    [min, max] = getMinMax();
-    colorScale = getColorScale(min, max);
-
     addCarpetplotSvg();
-    addAxes();
-    addLegend();
-    addCanvas();
-    addPoints();
+    if (data.targets.length > 0) {
+      [min, max] = getMinMax();
+      colorScale = getColorScale(min, max);
+
+      addAxes();
+      addCanvas();
+      addPoints();
+
+      appEvents.on('graph-hover', event => {
+        drawSharedCrosshair(event.pos);
+      }, scope);
+
+      appEvents.on('graph-hover-clear', () => {
+        clearCrosshair()
+      }, scope);
+    } else {
+      // todo : nothing to show here
+    }
   }
 
   function addCarpetplotSvg() {
@@ -74,6 +81,10 @@ export default function link(scope, elem, attrs, ctrl) {
       carpet.remove();
     }
 
+    if (canvas) {
+      canvas.remove();
+    }
+
     carpet = d3.select($carpet[0])
       .append('svg')
       .attr('width', width)
@@ -81,9 +92,9 @@ export default function link(scope, elem, attrs, ctrl) {
   }
 
   function addAxes() {
-    legendHeight = panel.legend.show ? LEGEND_HEIGHT + LEGEND_TOP_MARGIN : 0;
-    xAxisHeight = panel.xAxis.hideLabels ? 0 : getXAxisHeight();
-    chartHeight = height - margin.top - margin.bottom - legendHeight - xAxisHeight;
+    xAxisHeight = panel.xAxis.hideLabels ? 0 : 10;
+    chartHeight = height - margin.top - margin.bottom - xAxisHeight;
+    pointHeight = Math.max(0, chartHeight / targets.length);
     chartTop = margin.top;
     chartBottom = chartTop + chartHeight;
 
@@ -92,7 +103,8 @@ export default function link(scope, elem, attrs, ctrl) {
     chartWidth = width - yAxisWidth - margin.right;
 
     addXAxis();
-    // xAxisHeight = getXAxisHeight();
+
+    pointWidth = Math.max(0, chartWidth / data.data.length);
 
     if (!panel.yAxis.show) {
       carpet.select('.axis-y').selectAll('line').style('opacity', 0);
@@ -100,18 +112,22 @@ export default function link(scope, elem, attrs, ctrl) {
 
     if (!panel.xAxis.show) {
       carpet.select('.axis-x').selectAll('line').style('opacity', 0);
-      carpet.selectAll('.axis-x-weekends').selectAll('line').style('opacity', 0);
     }
   }
 
   function addYAxis() {
-    yScale = d3.scaleTime()
-      .domain([moment().startOf('day').add(1, 'day'), moment().startOf('day')])
-      .range([chartHeight, 0]);
+    const ticks = data.targets;
+
+    yScale = d3.scaleOrdinal()
+      .domain(ticks)
+      .range(d3.range(0, chartHeight, chartHeight / ticks.length));
+
+    invertedYScale = d3.scaleQuantize()
+      .domain([0, chartHeight])
+      .range(yScale.domain());
 
     const yAxis = d3.axisLeft(yScale)
-      .ticks(getYAxisTicks())
-      .tickFormat((value) => moment(value).format('HH:mm'))
+      .tickValues(ticks)
       .tickSizeInner(0 - width)
       .tickSizeOuter(0)
       .tickPadding(Y_AXIS_TICK_PADDING);
@@ -121,13 +137,12 @@ export default function link(scope, elem, attrs, ctrl) {
         .attr('class', 'axis axis-y')
         .call(yAxis);
 
-      const posY = margin.top;
+      const posY = margin.top + pointHeight/2;
       const posX = getYAxisWidth() + Y_AXIS_TICK_PADDING;
 
       const yAxisGroup = carpet.select('.axis-y');
       yAxisGroup.attr('transform', `translate(${posX},${posY})`);
       yAxisGroup.select('.domain').remove();
-      yAxisGroup.select('.tick:first-child').remove();
       yAxisGroup.selectAll('.tick line').remove();
     }
   }
@@ -137,27 +152,17 @@ export default function link(scope, elem, attrs, ctrl) {
     return d3.max(axisText, (text) => $(text).outerWidth());
   }
 
-  function getYAxisTicks() {
-    const count = chartHeight / Y_AXIS_TICK_MIN_SIZE;
-    const step = Math.max(2, Math.ceil(24 / count));
-    return d3.timeHour.every(step);
-  }
-
   function addXAxis() {
-    xFrom = moment(data.data[0].time).startOf('day');
-    xTo = moment(data.data[data.data.length - 1].time).startOf('day').add(1, 'day');
-    days = xTo.diff(xFrom, 'days');
+    xFrom = moment.utc(data.data[0].timestamp).startOf('day');
+    xTo = moment.utc(data.data[data.data.length - 1].timestamp).startOf('day').add(1, 'day');
 
-    xScale = d3.scaleTime()
+    xScale = d3.scaleUtc()
       .domain([xFrom, xTo])
       .range([0, chartWidth]);
 
     const xAxis = d3.axisBottom(xScale)
-      .ticks(getXAxisTicks(xFrom, xTo))
-      .tickFormat(d3.timeFormat(panel.xAxis.labelFormat))
+      .ticks()
       .tickSize(chartHeight);
-
-    const dayWidth = chartWidth / days;
 
     const posY = margin.top;
     const posX = yAxisWidth;
@@ -167,54 +172,33 @@ export default function link(scope, elem, attrs, ctrl) {
         .attr('class', 'axis axis-x')
         .attr('transform', `translate(${posX},${posY})`)
         .call(xAxis)
-        .selectAll('text')
-        .style('text-anchor', 'end')
-        .attr('dx', '-.8em')
-        .attr('dy', '.15em')
-        .attr('y', 0)
-        .attr('transform', `translate(${5 + dayWidth / 2},${posY + chartHeight - 10}) rotate(-65)`);
       carpet.select('.axis-x').selectAll('.tick line, .domain').remove();
-      carpet.select('.axis-x').select('.tick:last-child').remove();
-    }
-
-    if (panel.xAxis.showWeekends && dayWidth >= panel.xAxis.minBucketWidthToShowWeekends) {
-      addDayTicks(posX, posY, d3.timeSaturday.every(1));
-      addDayTicks(posX, posY, d3.timeMonday.every(1));
     }
   }
 
-  function addDayTicks(posX, posY, range) {
-    const ticks = d3.axisBottom(xScale)
-      .ticks(range)
-      .tickSize(chartHeight);
-    carpet.append('g')
-      .attr('class', 'axis-x-weekends')
-      .attr('transform', `translate(${posX},${posY})`)
-      .call(ticks)
-      .selectAll('text').remove();
-    carpet.select('.axis-x-weekends .domain').remove();
-  }
+  function grafanaTimeFormat(ticks, min, max) {
+    if (min && max && ticks) {
+      let range = max - min;
+      let secPerTick = (range/ticks) / 1000;
+      let oneDay = 86400000;
+      let oneYear = 31536000000;
 
-  function getXAxisHeight() {
-    return labelFormats.find(({ value }) => value === panel.xAxis.labelFormat).height;
-    // const axis = carpet.select('.axis-x');
-    // if (!axis.empty()) {
-    //   const totalHeight = $(axis.node()).height();
-    //   return Math.max(totalHeight, totalHeight - chartHeight);
-    // }
-    // return 0;
-  }
+      if (secPerTick <= 45) {
+        return "%H:%M:%S";
+      }
+      if (secPerTick <= 7200 || range <= oneDay) {
+        return "%H:%M";
+      }
+      if (secPerTick <= 80000) {
+        return "%m/%d %H:%M";
+      }
+      if (secPerTick <= 2419200 || range <= oneYear) {
+        return "%m/%d";
+      }
+      return "%Y-%m";
+    }
 
-  function getXAxisTicks(from, to) {
-    const count = chartWidth / X_AXIS_TICK_MIN_SIZE;
-    const step = Math.ceil(days / count);
-    if (step < 7) {
-      return d3.timeDay.every(1);
-    }
-    if (step < 28) {
-      return d3.timeMonday.every(1);
-    }
-    return d3.timeMonth.every(1);
+    return "%H:%M";
   }
 
   function addCanvas() {
@@ -232,6 +216,7 @@ export default function link(scope, elem, attrs, ctrl) {
     $canvas = $(canvas.node());
 
     context = canvas.node().getContext('2d');
+    context.lineWidth = 0.5;
   }
 
   function addPoints() {
@@ -239,12 +224,9 @@ export default function link(scope, elem, attrs, ctrl) {
 
     const container = d3.select(customBase);
 
-    pointWidth = Math.max(0, chartWidth / days);
-    pointHeight = Math.max(0, chartHeight / fragment.count);
-
     const pointScale = d3.scaleLinear()
-      .domain([fragment.count, 0])
-      .range([chartHeight, 0]);
+      .domain([0, targets.length])
+      .range([0, chartHeight]);
 
     const cols = container
       .selectAll('custom.carpet-col')
@@ -255,15 +237,20 @@ export default function link(scope, elem, attrs, ctrl) {
 
     const points = cols
       .selectAll('custom.carpet-point')
-      .data((d, i) => d.buckets.map(value => ({
-        value,
-        time: d.time
-      })))
+      .data((d, i) =>
+        _.map(d.buckets, function(value, target) {
+          return {
+            value,
+            target: target,
+            timestamp: d.timestamp
+          }
+        })
+      )
       .enter()
       .append('custom')
       .attr('class', 'carpet-point')
       .attr('fillStyle', ({ value }) => value === null ? panel.color.nullColor : colorScale(value))
-      .attr('x', (d) => xScale(d.time.toDate()))
+      .attr('x', (d) => xScale(moment.utc(d.timestamp)))
       .attr('y', (d, i) => pointScale(i));
 
     drawPoints(cols);
@@ -278,6 +265,9 @@ export default function link(scope, elem, attrs, ctrl) {
 
         context.fillStyle = node.attr('fillStyle');
         context.fillRect(node.attr('x'), node.attr('y'), pointWidth, pointHeight);
+
+        context.strokeStyle = STROKE_STYLE;
+        context.strokeRect(node.attr('x'), node.attr('y'), pointWidth, pointHeight);
       });
   }
 
@@ -313,6 +303,7 @@ export default function link(scope, elem, attrs, ctrl) {
 
     selection.active = true;
     selection.x1 = pos.x;
+    selection.y = pos.y;
 
     mouseUpHandler = () => onMouseUp();
 
@@ -327,41 +318,82 @@ export default function link(scope, elem, attrs, ctrl) {
     const selectionRange = Math.abs(selection.x2 - selection.x1);
 
     if (selection.x2 >= 0 && selectionRange > MIN_SELECTION_WIDTH) {
-      const timeFrom = moment(xScale.invert(Math.min(selection.x1, selection.x2))).startOf('day');
-      const timeTo = moment(xScale.invert(Math.max(selection.x1, selection.x2))).startOf('day').add(1, 'day');
+      const timeFrom = moment.utc(xScale.invert(Math.min(selection.x1, selection.x2)));
+      const timeTo = moment.utc(xScale.invert(Math.max(selection.x1, selection.x2)));
 
       ctrl.timeSrv.setTime({
         from: moment.utc(timeFrom),
         to: moment.utc(timeTo)
       });
+    } else {
+
+      if (ctrl.panel.template.update) {
+        const target = invertedYScale(selection.y);
+
+        const variable = _.find(ctrl.variableSrv.variables, {"name": ctrl.panel.template.variableToUpdate});
+        variable.current.text = target;
+        variable.current.value = [target];
+
+        ctrl.variableSrv.updateOptions(variable).then(() => {
+          ctrl.variableSrv.variableUpdated(variable).then(() => {
+            ctrl.$scope.$emit('template-variable-value-updated');
+            ctrl.$scope.$root.$broadcast('refresh');
+          });
+        });
+      }
     }
 
     clearSelection();
   }
 
   function onMouseLeave() {
-    // appEvents.emit('graph-hover-clear');
+    appEvents.emit('graph-hover-clear');
     clearCrosshair();
   }
 
   function onMouseMove(event) {
     if (!carpet) { return; }
+    if (!$canvas) { return; }
 
     const pos = getMousePos(event);
 
     if (selection.active) {
-      clearCrosshair();
-      tooltip.destroy();
-
       selection.x2 = pos.x;
       drawSelection(selection.x1, selection.x2);
-    } else {
-      drawCrosshair(pos);
+    }
+    emitGraphHoverEvent(event, pos);
 
-      const bucket = getBucket(pos);
+    drawCrosshair(pos);
+
+    const bucket = getBucket(pos);
+    if (bucket) {
       tooltip.show(pos, bucket);
       highlightPoint(pos, bucket);
+    } else {
+      resetPointHighLight();
+      tooltip.destroy();
     }
+  }
+
+  function emitGraphHoverEvent(event, pos) {
+    const x = xScale.invert(event.offsetX - yAxisWidth).valueOf();
+    const target = invertedYScale(pos.y);
+
+    // broadcast to other graph panels that we are hovering
+    appEvents.emit('graph-hover',
+      {
+        pos:
+          {
+            pageX: event.pageX,
+            pageY: event.pageY,
+            x: x, x1: x,
+            // Set minimum offset to prevent showing legend from another panel
+            panelRelY: Math.max(event.offsetY / height, 0.001)
+          },
+        panel: panel,
+        target: target
+      }
+    );
   }
 
   function highlightPoint(pos, bucket) {
@@ -386,6 +418,9 @@ export default function link(scope, elem, attrs, ctrl) {
 
     context.fillStyle = highlightColor;
     context.fillRect(x, y, pointWidth, pointHeight);
+
+    context.strokeStyle = STROKE_STYLE;
+    context.strokeRect(x, y, pointWidth, pointHeight);
   }
 
   function resetPointHighLight() {
@@ -394,6 +429,9 @@ export default function link(scope, elem, attrs, ctrl) {
     const { x, y } = highlightedBucket;
     context.fillStyle = originalPointColor;
     context.fillRect(x, y, pointWidth, pointHeight);
+
+    context.strokeStyle = STROKE_STYLE;
+    context.strokeRect(x, y, pointWidth, pointHeight);
 
     highlightedBucket = null;
   }
@@ -443,6 +481,25 @@ export default function link(scope, elem, attrs, ctrl) {
     }
   }
 
+  function drawSharedCrosshair(pos) {
+    if (carpet) {
+      carpet.selectAll('.heatmap-crosshair').remove();
+
+      let posX = xScale(moment.utc(pos.x));
+
+      const crosshair = carpet.append('g')
+        .attr('class', 'heatmap-crosshair');
+
+      const x = posX + yAxisWidth;
+      crosshair.append('line')
+        .attr('x1', x)
+        .attr('y1', chartTop)
+        .attr('x2', x)
+        .attr('y2', chartBottom)
+        .attr('stroke-width', 1);
+    }
+  }
+
   function clearCrosshair() {
     if (!carpet) { return; }
 
@@ -485,72 +542,6 @@ export default function link(scope, elem, attrs, ctrl) {
     drawLegend(legend, legendWidth, legendHeight);
   }
 
-  function addLegend() {
-    if (!panel.legend.show) { return; }
-
-    const decimals = panel.data.decimals;
-    const format = panel.data.unitFormat;
-    const formatter = valueFormatter(format, decimals);
-
-    const legendY = yAxisWidth;
-    const legendX = margin.top + chartHeight + xAxisHeight + LEGEND_TOP_MARGIN;
-
-    const legendContainer = carpet.append('g')
-      .attr('class', 'carpet-legend')
-      .attr('transform', `translate(${legendY},${legendX})`);
-
-    const legendHeight = LEGEND_HEIGHT / 2;
-    const labelMargin = 5;
-
-    const minLabel = createMinMaxLabel(legendContainer, formatter(min));
-    const maxLabel = createMinMaxLabel(legendContainer, formatter(max));
-    const $minLabel = $(minLabel.node());
-    const $maxLabel = $(maxLabel.node());
-
-    const labelHeight = Math.ceil(Math.max($minLabel.height(), $maxLabel.height()));
-    const labelWidth = Math.ceil(Math.max($minLabel.width(), $maxLabel.width()));
-    const legendMargin = labelWidth + 2 * labelMargin;
-    const labelY = (legendHeight - labelHeight + 8) / 2;
-
-    minLabel
-      .attr('x', legendMargin / 2)
-      .attr('y', labelY);
-    maxLabel
-      .attr('x', chartWidth - legendMargin / 2)
-      .attr('y', labelY);
-
-    const legend = legendContainer.append('g')
-      .attr('transform', `translate(${legendMargin},0)`);
-
-    const legendWidth = chartWidth - 2 * legendMargin;
-    drawLegend(legend, legendWidth, legendHeight);
-
-    const legendScale = d3.scaleLinear()
-      .domain([min, max])
-      .range([0, legendWidth]);
-
-    const legendAxis = d3.axisBottom(legendScale)
-      .ticks(20)
-      .tickFormat(formatter)
-      .tickSize(legendHeight);
-
-    legendContainer.append('g')
-      .attr('class', 'legend-axis')
-      .call(legendAxis)
-      .attr('transform', `translate(${legendMargin},0)`)
-      .select('.domain').remove();
-  }
-
-  function createMinMaxLabel(legendContainer, text) {
-    return legendContainer.append('text')
-      .attr('class', 'min-max-label')
-      .attr('y', 0)
-      .attr('x', 0)
-      .attr('dy', '0.71em')
-      .attr('text-anchor', 'middle')
-      .text(text);
-  }
-
   function drawLegend(legend, legendWidth, legendHeight, rangeStep = 2) {
     const legendColorScale = getColorScale(0, legendWidth);
     const valuesRange = d3.range(0, legendWidth, rangeStep);
@@ -568,7 +559,6 @@ export default function link(scope, elem, attrs, ctrl) {
   }
 
   // Helpers
-
   function isInChart(pos) {
     const { x, y } = pos;
 
@@ -581,21 +571,23 @@ export default function link(scope, elem, attrs, ctrl) {
   function getBucket(pos) {
     const { x, y } = pos;
 
-    const xTime = moment(xScale.invert(x)).startOf('day');
-    const yTime = moment(yScale.invert(y));
+    const bucketTimestamp = fragment.getBucketTimestamp(moment(xScale.invert(x)).valueOf());
+    const xTime = moment.utc(bucketTimestamp);
+    const index = fragment.getBucketIndex(xTime, xFrom);
 
-    const dayIndex = xTime.diff(xFrom, 'days');
-    const bucketIndex = fragment.getBucketIndex(yTime);
+    const target = invertedYScale(y);
+    const bucketIndex = _.indexOf(targets, target);
 
     const bucketX = xScale(xTime.toDate());
     const bucketY = pointHeight * bucketIndex;
 
-    return _.has(data, `data[${dayIndex}].buckets[${bucketIndex}]`)
+    return _.has(data, `data[${index}].buckets[${target}]`)
       ? {
         x: bucketX,
         y: bucketY,
-        time: fragment.getTime(data.data[dayIndex].time, bucketIndex),
-        value: data.data[dayIndex].buckets[bucketIndex],
+        target: target,
+        timestamp: data.data[index].timestamp,
+        value: data.data[index].buckets[target],
         hasValue() {
           return this.value !== null;
         },
@@ -610,16 +602,20 @@ export default function link(scope, elem, attrs, ctrl) {
     return data && data.data;
   }
 
-  // Render
+  function noDataPoints() {
+    var html = '<div class="datapoints-warning"><span class="small">No data points</span></div>';
+    elem.html(html);
+  }
 
   function render() {
     data = ctrl.data;
     panel = ctrl.panel;
     timeRange = ctrl.range;
 
-    fragment = getFragment(panel.fragment);
+    targets = ctrl.data.targets;
+    fragment = getFragment(panel.fragment)
 
-    if (!d3.select("#heatmap-color-legend").empty()) {
+    if (!d3.select('#heatmap-color-legend').empty()) {
       drawColorLegend();
     }
 
@@ -627,6 +623,8 @@ export default function link(scope, elem, attrs, ctrl) {
 
     scope.hasData = hasData;
     scope.isInChart = isInChart;
+
+    ctrl.renderingCompleted();
   }
 
   $carpet.on('mousedown', onMouseDown);

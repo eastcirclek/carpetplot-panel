@@ -5,16 +5,16 @@ import { getFragment } from './fragments';
 
 const createConverter = (aggregateType, fragmentType) => {
 
-  const createArray = (length, initiator = () => null) => Array.apply(null, { length }).map(initiator);
-
   const prepareData = (from, to, fragment) => {
     const data = {};
     const fromUtc = moment.utc(from).startOf('day');
     const toUtc = moment.utc(to).startOf('day').add(1, 'day');
+    // timeUtc = timeUtc.add(1, 'day')
     for (let timeUtc = moment.utc(fromUtc); timeUtc.isBefore(toUtc); timeUtc = fragment.nextTime(timeUtc)) {
-      data[timeUtc.unix()] = {
-        time: timeUtc,
-        values: []
+      data[timeUtc.valueOf()] = {
+        // time: timeUtc.clone(),
+        timestamp: timeUtc.valueOf(),
+        values: {}
       };
     }
     return {
@@ -26,64 +26,115 @@ const createConverter = (aggregateType, fragmentType) => {
 
   const groupData = (from, to, fragment, dataList) => {
     const container = prepareData(from, to, fragment);
-    dataList.forEach(({ datapoints }) => {
+    const targets = _.map(dataList, 'target');
+    container.targets = targets;
+
+    dataList.forEach(({ target, datapoints }) => {
       datapoints
         .filter(([value]) => value !== null)
         .forEach(([value, timestamp]) => {
-          const bucket = fragment.getBucket(timestamp);
-          if (!(bucket in container.data)) { return; }
-          container.data[bucket].values.push(value);
+          const bucketTimestamp = fragment.getBucketTimestamp(timestamp);
+          if (!(bucketTimestamp in container.data)) { return; }
+          if (!(target in container.data[bucketTimestamp].values)) {
+            container.data[bucketTimestamp].values[target] = [];
+          }
+          container.data[bucketTimestamp].values[target].push(value);
         });
     });
+
     return container;
   };
 
-  const aggregateData = (from, to, fragment, data) => {
-    let min = Number.MAX_VALUE;
-    let max = Number.MIN_VALUE;
-
+  const aggregateData = (from, to, fragment, container) => {
+    const data = container.data;
     const aggregateFunc = aggregate(aggregateType);
     const result = [];
 
-    const createBucket = (time) => ({
-      time,
-      buckets: createArray(fragment.count)
+    const createBucket = (timestamp) => ({
+      timestamp,
+      buckets: {}
     });
 
-    let bucket = createBucket(moment(from).local().startOf('day'));
-    Object.values(data).forEach(({ time, values }) => {
-      const timeLocal = time.local();
-      if (timeLocal.isBefore(bucket.time)) { return; }
+    // let bucket = createBucket(moment(from).startOf('day'));
+    let bucket;
+    if (data && _.size(data) > 0) {
+      const firstTimestamp = _.first(_.values(data))['timestamp'];
+      bucket = createBucket(firstTimestamp);
+    }
 
-      const value = values.length > 0
-        ? aggregateFunc(values)
-        : null;
-      if (value !== null && value < min) { min = value; }
-      if (value !== null && value > max) { max = value; }
+    Object.values(data).forEach(({ timestamp, values }) => {
+      if (timestamp < bucket.timestamp) { return; }
 
-      const day = moment(timeLocal).startOf('day');
-      if (!day.isSame(bucket.time)) {
+      const bucketTimestamp = fragment.getBucketTimestamp(timestamp);
+      if (bucket.timestamp != bucketTimestamp) {
         result.push({ ...bucket });
-        bucket = createBucket(moment(day));
+        bucket = createBucket(bucketTimestamp);
       }
 
-      const bucketIndex = fragment.getBucketIndex(timeLocal);
-      bucket.buckets[bucketIndex] = value;
+      _.forOwn(values, function(arr, target) {
+        const value = arr.length > 0
+          ? aggregateFunc(arr)
+          : null;
+
+        bucket.buckets[target] = value;
+      });
     });
 
-    return {
-      data: result,
-      stats: {
-        min,
-        max
-      }
-    };
+    result.push({ ...bucket });
+
+    return result;
   };
 
-  const convertData = (from, to, dataList) => {
+  const normalizeData = (data) => {
+    return _.map(data, function (obj) {
+      const values = _.values(obj.buckets);
+      const sum = _.sum(values);
+      // const sortedValues = _.sortBy(values);
+
+      obj.buckets = _.mapValues(obj.buckets, value => value/sum
+        // function(value) {
+        //   const rank = values.length - _.sortedIndexOf(sortedValues, value);
+        //   if (rank < 5) {
+        //     return value/sum;
+        //   } else {
+        //     return 0;
+        //   }
+        // }
+      );
+
+      return obj;
+    });
+  };
+
+  const rankData = (data) => {
+    return _.map(data, function (obj) {
+
+
+      const sortedValues = _.sortBy(_.values(obj.buckets));
+
+      obj.buckets = _.mapValues(obj.buckets, function(value) {
+        return _.indexOf(sortedValues, value);
+      });
+
+      return obj;
+    });
+  };
+
+  const convertData = (from, to, dataList, processingMode) => {
     const fragment = getFragment(fragmentType);
     const container = groupData(from, to, fragment, dataList);
-    const data = aggregateData(from, to, fragment, container.data);
+    let agg = aggregateData(from, to, fragment, container);
+    if (_.eq(processingMode, 'normalize')) { agg = normalizeData(agg); }
+    else if (_.eq(processingMode, 'rank')) {agg = rankData(agg);}
+    const allValues = _.flatten(_.map(agg, obj => _.values(obj.buckets)));
+    const data = {
+      data: agg,
+      stats: {
+        min: _.min(allValues),
+        max: _.max(allValues)
+      }
+    };
+
     return {
       ...container,
       ...data

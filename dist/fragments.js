@@ -3,7 +3,7 @@
 System.register(['moment'], function (_export, _context) {
   "use strict";
 
-  var moment, _fragments, MINUTE, QUARTER, HOUR, fragments, fragmentsMap, getFragment;
+  var moment, _fragments, TWENTYFOUR, TWELVE, SIX, fragments, fragmentsMap, getFragment;
 
   function _defineProperty(obj, key, value) {
     if (key in obj) {
@@ -25,56 +25,52 @@ System.register(['moment'], function (_export, _context) {
       moment = _moment.default;
     }],
     execute: function () {
-      MINUTE = 'MINUTE';
-      QUARTER = 'QUARTER';
-      HOUR = 'HOUR';
-      fragments = (_fragments = {}, _defineProperty(_fragments, MINUTE, {
-        count: 1440,
-        getBucketIndex: function getBucketIndex(time) {
-          return time.hour() * 60 + time.minute();
+      TWENTYFOUR = 'TWENTYFOUR';
+      TWELVE = 'TWELVE';
+      SIX = 'SIX';
+      fragments = (_fragments = {}, _defineProperty(_fragments, TWENTYFOUR, {
+        // getBucketIndex: (time) => time.hour() * 60 + time.minute(),
+        // getTime: (time, bucketIndex) => moment(time).startOf('day').add(bucketIndex, 'minute'),
+        getBucketIndex: function getBucketIndex(time, from) {
+          return time.diff(from, 'hours') / 24;
         },
-        getTime: function getTime(time, bucketIndex) {
-          return moment(time).startOf('day').add(bucketIndex, 'minute');
-        },
-        getBucket: function getBucket(timestamp) {
-          return moment(timestamp).startOf('minute').unix();
+        getBucketTimestamp: function getBucketTimestamp(timestamp) {
+          return moment.utc(timestamp).startOf('day').valueOf();
         },
         nextTime: function nextTime(time) {
-          return moment.utc(time).add(1, 'minute');
+          return moment.utc(time).add(24, 'hour');
         }
-      }), _defineProperty(_fragments, QUARTER, {
-        count: 96,
-        getBucketIndex: function getBucketIndex(time) {
-          return time.hour() * 4 + Math.floor(time.minute() / 15);
+      }), _defineProperty(_fragments, TWELVE, {
+        // getBucketIndex: (time) => time.hour() * 4 + Math.floor(time.minute() / 15),
+        // getTime: (time, bucketIndex) => moment(time).startOf('day').add(15 * bucketIndex, 'minute'),
+        getBucketIndex: function getBucketIndex(time, from) {
+          return time.diff(from, 'hours') / 12;
         },
-        getTime: function getTime(time, bucketIndex) {
-          return moment(time).startOf('day').add(15 * bucketIndex, 'minute');
-        },
-        getBucket: function getBucket(timestamp) {
-          var timeUtc = moment(timestamp);
-          var minutes = Math.floor(timeUtc.minute() / 15) * 15;
-          return timeUtc.startOf('hour').add(minutes, 'minute').unix();
+        getBucketTimestamp: function getBucketTimestamp(timestamp) {
+          var timeUtc = moment.utc(timestamp);
+          var hours = Math.floor(timeUtc.hour() / 12) * 12;
+          return timeUtc.startOf('day').add(hours, 'hour').valueOf();
         },
         nextTime: function nextTime(time) {
-          return moment.utc(time).add(15, 'minute');
+          return moment.utc(time).add(12, 'hour');
         }
-      }), _defineProperty(_fragments, HOUR, {
-        count: 24,
-        getBucketIndex: function getBucketIndex(time) {
-          return time.hour();
+      }), _defineProperty(_fragments, SIX, {
+        // getBucketIndex: (time) => time.hour(),
+        // getTime: (time, bucketIndex) => moment(time).startOf('day').add(bucketIndex, 'hour'),
+        getBucketIndex: function getBucketIndex(time, from) {
+          return time.diff(from, 'hours') / 6;
         },
-        getTime: function getTime(time, bucketIndex) {
-          return moment(time).startOf('day').add(bucketIndex, 'hour');
-        },
-        getBucket: function getBucket(timestamp) {
-          return moment(timestamp).startOf('hour').unix();
+        getBucketTimestamp: function getBucketTimestamp(timestamp) {
+          var timeUtc = moment.utc(timestamp);
+          var hours = Math.floor(timeUtc.hour() / 6) * 6;
+          return timeUtc.startOf('day').add(hours, 'hour').valueOf();
         },
         nextTime: function nextTime(time) {
-          return moment.utc(time).add(1, 'hour');
+          return moment.utc(time).add(6, 'hour');
         }
       }), _fragments);
 
-      _export('fragmentsMap', fragmentsMap = [{ name: 'Minute', value: MINUTE }, { name: '15 minutes', value: QUARTER }, { name: 'Hour', value: HOUR }]);
+      _export('fragmentsMap', fragmentsMap = [{ name: 'Day', value: TWENTYFOUR }, { name: '12 hours', value: TWELVE }, { name: '6 hours', value: SIX }]);
 
       _export('fragmentsMap', fragmentsMap);
 
@@ -85,9 +81,9 @@ System.register(['moment'], function (_export, _context) {
       _export('getFragment', getFragment);
 
       _export('default', {
-        HOUR: HOUR,
-        QUARTER: QUARTER,
-        MINUTE: MINUTE
+        TWENTYFOUR: TWENTYFOUR,
+        TWELVE: TWELVE,
+        SIX: SIX
       });
     }
   };

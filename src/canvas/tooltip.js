@@ -2,19 +2,17 @@ import d3 from 'd3';
 import $ from 'jquery';
 import moment from 'moment';
 
-import { valueFormatter } from '../formatting';
-
 let TOOLTIP_PADDING_X = 30;
 let TOOLTIP_PADDING_Y = 5;
 
 class CarpetplotTooltip {
 
-  constructor(elem, scope) {
+  constructor(elem, scope, ctrl) {
     this.tooltip = null;
     this.scope = scope;
     this.dashboard = scope.ctrl.dashboard;
     this.panel = scope.ctrl.panel;
-    this.carpetPanel = elem;
+    this.ctrl = ctrl;
 
     elem.on('mouseover', this.onMouseOver.bind(this));
     elem.on('mouseleave', this.onMouseLeave.bind(this));
@@ -24,7 +22,6 @@ class CarpetplotTooltip {
     if (!this.panel.tooltip.show || !this.scope.hasData()) { return; }
 
     if (!this.tooltip) {
-      this.add();
       this.move(e);
     }
   }
@@ -36,7 +33,9 @@ class CarpetplotTooltip {
   onMouseMove(e) {
     if (!this.panel.tooltip.show) { return; }
 
-    this.move(e);
+    if (!this.tooltip) {
+      this.move(e);
+    }
   }
 
   add() {
@@ -54,7 +53,7 @@ class CarpetplotTooltip {
   }
 
   show(pos, bucket) {
-    if (!this.panel.tooltip.show || !this.scope.isInChart(pos) || !bucket.hasValue()) {
+    if (!bucket || !this.panel.tooltip.show || !this.scope.isInChart(pos) || !bucket.hasValue()) {
       this.destroy();
       return;
     }
@@ -63,17 +62,24 @@ class CarpetplotTooltip {
       this.add();
     }
 
-    const tooltipTimeFormat = 'ddd YYYY-MM-DD HH:mm:ss';
-    const time = this.dashboard.formatDate(bucket.time, tooltipTimeFormat);
+    const tooltipTimeFormat = 'YY-MM-DD HH:mm';
+    const time = this.dashboard.formatDate(bucket.timestamp, tooltipTimeFormat);
+    let value = bucket.value;
+
     const decimals = this.panel.data.decimals;
-    const format = this.panel.data.unitFormat;
-    const formatter = valueFormatter(format, decimals);
-    const value = formatter(bucket.value);
+    if (decimals) {
+      value = _.round(value, _.isInteger(value) ? 0 : (decimals || 5));
+    }
+
+    if (this.ctrl.panel.data.percentage === true) {
+      value = parseFloat(_.multiply(value, 100).toFixed(decimals)) + '%';
+    }
+    const target = bucket.target;
 
     let tooltipHtml = `
       <div class='graph-tooltip-time'>${time}</div>
-      <div>
-      value: <b>${value}</b><br/>
+      <div align='center'>
+      <b>${target}</b><br/>${value}<br/>
       </div>
     `;
 

@@ -6,18 +6,13 @@ import kbn from 'app/core/utils/kbn';
 import createConverter from './data-converter';
 import aggregates, { aggregatesMap } from './aggregates';
 import fragments, { fragmentsMap } from './fragments';
-import { labelFormats } from './xAxisLabelFormats';
-import svgRendering from './svg/rendering';
 import canvasRendering from './canvas/rendering';
 import { carpetplotOptionsEditor } from './options-editor';
 import './css/carpet-plot.css!';
 
-const CANVAS = 'CANVAS';
-const SVG = 'SVG';
-
 const panelDefaults = {
   aggregate: aggregates.AVG,
-  fragment: fragments.HOUR,
+  fragment: fragments.TWENTYFOUR,
   color: {
     colorScheme: 'interpolateRdYlGn',
     nullColor: 'transparent'
@@ -28,10 +23,7 @@ const panelDefaults = {
   },
   xAxis: {
     show: true,
-    showWeekends: true,
-    minBucketWidthToShowWeekends: 4,
-    showCrosshair: true,
-    labelFormat: '%a %m/%d'
+    showCrosshair: true
   },
   yAxis: {
     show: true,
@@ -44,12 +36,14 @@ const panelDefaults = {
     show: true
   },
   data: {
-    unitFormat: 'short',
-    decimals: null
+    decimals: null,
+    processing: 'none',
+    percentage: false
+  },
+  template: {
+    update: false
   }
 };
-
-const renderer = CANVAS;
 
 const colorSchemes = [
   // Diverging
@@ -82,16 +76,17 @@ const colorSchemes = [
 export class CarpetPlotCtrl extends MetricsPanelCtrl {
   static templateUrl = 'module.html';
 
-  constructor($scope, $injector, $rootScope, timeSrv) {
+  constructor($scope, $injector, $rootScope, timeSrv, variableSrv) {
     super($scope, $injector);
 
     this.dataList = null;
     this.data = {};
     this.timeSrv = timeSrv;
+    this.variableSrv = variableSrv;
+    this.variableNames = _.map(variableSrv.variables, 'name');
     this.colorSchemes = colorSchemes;
     this.fragmentOptions = fragmentsMap;
     this.aggregateOptions = aggregatesMap;
-    this.xAxisLabelFormats = labelFormats;
     this.theme = contextSrv.user.lightTheme ? 'light' : 'dark';
 
     _.defaultsDeep(this.panel, panelDefaults);
@@ -121,19 +116,10 @@ export class CarpetPlotCtrl extends MetricsPanelCtrl {
   transformData(data) {
     const converter = createConverter(this.panel.aggregate, this.panel.fragment);
     const { from, to } = this.range || this.timeSrv.timeRange();
-    return converter.convertData(from, to, data);
+    return converter.convertData(from, to, data, this.panel.data.processing);
   }
 
   link(scope, elem, attrs, ctrl) {
-    switch (renderer) {
-      case CANVAS: {
-        canvasRendering(scope, elem, attrs, ctrl);
-        break;
-      }
-      case SVG: {
-        svgRendering(scope, elem, attrs, ctrl);
-        break;
-      }
-    }
+    canvasRendering(scope, elem, attrs, ctrl);
   }
 }

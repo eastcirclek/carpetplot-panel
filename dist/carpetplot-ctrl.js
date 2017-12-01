@@ -1,9 +1,9 @@
 'use strict';
 
-System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/kbn', './data-converter', './aggregates', './fragments', './xAxisLabelFormats', './svg/rendering', './canvas/rendering', './options-editor', './css/carpet-plot.css!'], function (_export, _context) {
+System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/kbn', './data-converter', './aggregates', './fragments', './canvas/rendering', './options-editor', './css/carpet-plot.css!'], function (_export, _context) {
   "use strict";
 
-  var MetricsPanelCtrl, _, contextSrv, kbn, createConverter, aggregates, aggregatesMap, fragments, fragmentsMap, labelFormats, svgRendering, canvasRendering, carpetplotOptionsEditor, _createClass, CANVAS, SVG, panelDefaults, renderer, colorSchemes, CarpetPlotCtrl;
+  var MetricsPanelCtrl, _, contextSrv, kbn, createConverter, aggregates, aggregatesMap, fragments, fragmentsMap, canvasRendering, carpetplotOptionsEditor, _createClass, panelDefaults, colorSchemes, CarpetPlotCtrl;
 
   function _classCallCheck(instance, Constructor) {
     if (!(instance instanceof Constructor)) {
@@ -52,10 +52,6 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/k
     }, function (_fragments) {
       fragments = _fragments.default;
       fragmentsMap = _fragments.fragmentsMap;
-    }, function (_xAxisLabelFormats) {
-      labelFormats = _xAxisLabelFormats.labelFormats;
-    }, function (_svgRendering) {
-      svgRendering = _svgRendering.default;
     }, function (_canvasRendering) {
       canvasRendering = _canvasRendering.default;
     }, function (_optionsEditor) {
@@ -80,11 +76,9 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/k
         };
       }();
 
-      CANVAS = 'CANVAS';
-      SVG = 'SVG';
       panelDefaults = {
         aggregate: aggregates.AVG,
-        fragment: fragments.HOUR,
+        fragment: fragments.TWENTYFOUR,
         color: {
           colorScheme: 'interpolateRdYlGn',
           nullColor: 'transparent'
@@ -95,10 +89,7 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/k
         },
         xAxis: {
           show: true,
-          showWeekends: true,
-          minBucketWidthToShowWeekends: 4,
-          showCrosshair: true,
-          labelFormat: '%a %m/%d'
+          showCrosshair: true
         },
         yAxis: {
           show: true,
@@ -111,11 +102,14 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/k
           show: true
         },
         data: {
-          unitFormat: 'short',
-          decimals: null
+          decimals: null,
+          processing: 'none',
+          percentage: false
+        },
+        template: {
+          update: false
         }
       };
-      renderer = CANVAS;
       colorSchemes = [
       // Diverging
       { name: 'Spectral', value: 'interpolateSpectral', invert: 'always' }, { name: 'RdYlGn', value: 'interpolateRdYlGn', invert: 'always' },
@@ -129,7 +123,7 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/k
       _export('CarpetPlotCtrl', CarpetPlotCtrl = function (_MetricsPanelCtrl) {
         _inherits(CarpetPlotCtrl, _MetricsPanelCtrl);
 
-        function CarpetPlotCtrl($scope, $injector, $rootScope, timeSrv) {
+        function CarpetPlotCtrl($scope, $injector, $rootScope, timeSrv, variableSrv) {
           _classCallCheck(this, CarpetPlotCtrl);
 
           var _this = _possibleConstructorReturn(this, (CarpetPlotCtrl.__proto__ || Object.getPrototypeOf(CarpetPlotCtrl)).call(this, $scope, $injector));
@@ -155,10 +149,11 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/k
           _this.dataList = null;
           _this.data = {};
           _this.timeSrv = timeSrv;
+          _this.variableSrv = variableSrv;
+          _this.variableNames = _.map(variableSrv.variables, 'name');
           _this.colorSchemes = colorSchemes;
           _this.fragmentOptions = fragmentsMap;
           _this.aggregateOptions = aggregatesMap;
-          _this.xAxisLabelFormats = labelFormats;
           _this.theme = contextSrv.user.lightTheme ? 'light' : 'dark';
 
           _.defaultsDeep(_this.panel, panelDefaults);
@@ -179,23 +174,12 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/k
                 from = _ref.from,
                 to = _ref.to;
 
-            return converter.convertData(from, to, data);
+            return converter.convertData(from, to, data, this.panel.data.processing);
           }
         }, {
           key: 'link',
           value: function link(scope, elem, attrs, ctrl) {
-            switch (renderer) {
-              case CANVAS:
-                {
-                  canvasRendering(scope, elem, attrs, ctrl);
-                  break;
-                }
-              case SVG:
-                {
-                  svgRendering(scope, elem, attrs, ctrl);
-                  break;
-                }
-            }
+            canvasRendering(scope, elem, attrs, ctrl);
           }
         }]);
 

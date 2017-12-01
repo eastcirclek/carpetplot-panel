@@ -1,9 +1,9 @@
 'use strict';
 
-System.register(['d3', 'jquery', 'moment', '../formatting'], function (_export, _context) {
+System.register(['d3', 'jquery', 'moment'], function (_export, _context) {
   "use strict";
 
-  var d3, $, moment, valueFormatter, _createClass, TOOLTIP_PADDING_X, TOOLTIP_PADDING_Y, CarpetplotTooltip;
+  var d3, $, moment, _createClass, TOOLTIP_PADDING_X, TOOLTIP_PADDING_Y, CarpetplotTooltip;
 
   function _classCallCheck(instance, Constructor) {
     if (!(instance instanceof Constructor)) {
@@ -18,8 +18,6 @@ System.register(['d3', 'jquery', 'moment', '../formatting'], function (_export, 
       $ = _jquery.default;
     }, function (_moment) {
       moment = _moment.default;
-    }, function (_formatting) {
-      valueFormatter = _formatting.valueFormatter;
     }],
     execute: function () {
       _createClass = function () {
@@ -44,14 +42,14 @@ System.register(['d3', 'jquery', 'moment', '../formatting'], function (_export, 
       TOOLTIP_PADDING_Y = 5;
 
       CarpetplotTooltip = function () {
-        function CarpetplotTooltip(elem, scope) {
+        function CarpetplotTooltip(elem, scope, ctrl) {
           _classCallCheck(this, CarpetplotTooltip);
 
           this.tooltip = null;
           this.scope = scope;
           this.dashboard = scope.ctrl.dashboard;
           this.panel = scope.ctrl.panel;
-          this.carpetPanel = elem;
+          this.ctrl = ctrl;
 
           elem.on('mouseover', this.onMouseOver.bind(this));
           elem.on('mouseleave', this.onMouseLeave.bind(this));
@@ -65,7 +63,6 @@ System.register(['d3', 'jquery', 'moment', '../formatting'], function (_export, 
             }
 
             if (!this.tooltip) {
-              this.add();
               this.move(e);
             }
           }
@@ -81,7 +78,9 @@ System.register(['d3', 'jquery', 'moment', '../formatting'], function (_export, 
               return;
             }
 
-            this.move(e);
+            if (!this.tooltip) {
+              this.move(e);
+            }
           }
         }, {
           key: 'add',
@@ -100,7 +99,7 @@ System.register(['d3', 'jquery', 'moment', '../formatting'], function (_export, 
         }, {
           key: 'show',
           value: function show(pos, bucket) {
-            if (!this.panel.tooltip.show || !this.scope.isInChart(pos) || !bucket.hasValue()) {
+            if (!bucket || !this.panel.tooltip.show || !this.scope.isInChart(pos) || !bucket.hasValue()) {
               this.destroy();
               return;
             }
@@ -109,14 +108,21 @@ System.register(['d3', 'jquery', 'moment', '../formatting'], function (_export, 
               this.add();
             }
 
-            var tooltipTimeFormat = 'ddd YYYY-MM-DD HH:mm:ss';
-            var time = this.dashboard.formatDate(bucket.time, tooltipTimeFormat);
-            var decimals = this.panel.data.decimals;
-            var format = this.panel.data.unitFormat;
-            var formatter = valueFormatter(format, decimals);
-            var value = formatter(bucket.value);
+            var tooltipTimeFormat = 'YY-MM-DD HH:mm';
+            var time = this.dashboard.formatDate(bucket.timestamp, tooltipTimeFormat);
+            var value = bucket.value;
 
-            var tooltipHtml = '\n      <div class=\'graph-tooltip-time\'>' + time + '</div>\n      <div>\n      value: <b>' + value + '</b><br/>\n      </div>\n    ';
+            var decimals = this.panel.data.decimals;
+            if (decimals) {
+              value = _.round(value, _.isInteger(value) ? 0 : decimals || 5);
+            }
+
+            if (this.ctrl.panel.data.percentage === true) {
+              value = parseFloat(_.multiply(value, 100).toFixed(decimals)) + '%';
+            }
+            var target = bucket.target;
+
+            var tooltipHtml = '\n      <div class=\'graph-tooltip-time\'>' + time + '</div>\n      <div align=\'center\'>\n      <b>' + target + '</b><br/>' + value + '<br/>\n      </div>\n    ';
 
             this.tooltip.html(tooltipHtml);
 

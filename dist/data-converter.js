@@ -68,21 +68,16 @@ System.register(['moment', './aggregates', './fragments'], function (_export, _c
 
       createConverter = function createConverter(aggregateType, fragmentType) {
 
-        var createArray = function createArray(length) {
-          var initiator = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : function () {
-            return null;
-          };
-          return Array.apply(null, { length: length }).map(initiator);
-        };
-
         var prepareData = function prepareData(from, to, fragment) {
           var data = {};
           var fromUtc = moment.utc(from).startOf('day');
           var toUtc = moment.utc(to).startOf('day').add(1, 'day');
+          // timeUtc = timeUtc.add(1, 'day')
           for (var timeUtc = moment.utc(fromUtc); timeUtc.isBefore(toUtc); timeUtc = fragment.nextTime(timeUtc)) {
-            data[timeUtc.unix()] = {
-              time: timeUtc,
-              values: []
+            data[timeUtc.valueOf()] = {
+              // time: timeUtc.clone(),
+              timestamp: timeUtc.valueOf(),
+              values: {}
             };
           }
           return {
@@ -94,8 +89,12 @@ System.register(['moment', './aggregates', './fragments'], function (_export, _c
 
         var groupData = function groupData(from, to, fragment, dataList) {
           var container = prepareData(from, to, fragment);
+          var targets = _.map(dataList, 'target');
+          container.targets = targets;
+
           dataList.forEach(function (_ref) {
-            var datapoints = _ref.datapoints;
+            var target = _ref.target,
+                datapoints = _ref.datapoints;
 
             datapoints.filter(function (_ref2) {
               var _ref3 = _slicedToArray(_ref2, 1),
@@ -107,71 +106,121 @@ System.register(['moment', './aggregates', './fragments'], function (_export, _c
                   value = _ref5[0],
                   timestamp = _ref5[1];
 
-              var bucket = fragment.getBucket(timestamp);
-              if (!(bucket in container.data)) {
+              var bucketTimestamp = fragment.getBucketTimestamp(timestamp);
+              if (!(bucketTimestamp in container.data)) {
                 return;
               }
-              container.data[bucket].values.push(value);
+              if (!(target in container.data[bucketTimestamp].values)) {
+                container.data[bucketTimestamp].values[target] = [];
+              }
+              container.data[bucketTimestamp].values[target].push(value);
             });
           });
+
           return container;
         };
 
-        var aggregateData = function aggregateData(from, to, fragment, data) {
-          var min = Number.MAX_VALUE;
-          var max = Number.MIN_VALUE;
-
+        var aggregateData = function aggregateData(from, to, fragment, container) {
+          var data = container.data;
           var aggregateFunc = aggregate(aggregateType);
           var result = [];
 
-          var createBucket = function createBucket(time) {
+          var createBucket = function createBucket(timestamp) {
             return {
-              time: time,
-              buckets: createArray(fragment.count)
+              timestamp: timestamp,
+              buckets: {}
             };
           };
 
-          var bucket = createBucket(moment(from).local().startOf('day'));
+          // let bucket = createBucket(moment(from).startOf('day'));
+          var bucket = void 0;
+          if (data && _.size(data) > 0) {
+            var firstTimestamp = _.first(_.values(data))['timestamp'];
+            bucket = createBucket(firstTimestamp);
+          }
+
           Object.values(data).forEach(function (_ref6) {
-            var time = _ref6.time,
+            var timestamp = _ref6.timestamp,
                 values = _ref6.values;
 
-            var timeLocal = time.local();
-            if (timeLocal.isBefore(bucket.time)) {
+            if (timestamp < bucket.timestamp) {
               return;
             }
 
-            var value = values.length > 0 ? aggregateFunc(values) : null;
-            if (value !== null && value < min) {
-              min = value;
-            }
-            if (value !== null && value > max) {
-              max = value;
-            }
-
-            var day = moment(timeLocal).startOf('day');
-            if (!day.isSame(bucket.time)) {
+            var bucketTimestamp = fragment.getBucketTimestamp(timestamp);
+            if (bucket.timestamp != bucketTimestamp) {
               result.push(_extends({}, bucket));
-              bucket = createBucket(moment(day));
+              bucket = createBucket(bucketTimestamp);
             }
 
-            var bucketIndex = fragment.getBucketIndex(timeLocal);
-            bucket.buckets[bucketIndex] = value;
+            _.forOwn(values, function (arr, target) {
+              var value = arr.length > 0 ? aggregateFunc(arr) : null;
+
+              bucket.buckets[target] = value;
+            });
           });
 
-          return {
-            data: result,
-            stats: {
-              min: min,
-              max: max
-            }
-          };
+          result.push(_extends({}, bucket));
+
+          return result;
         };
 
-        var convertData = function convertData(from, to, dataList) {
+        var normalizeData = function normalizeData(data) {
+          return _.map(data, function (obj) {
+            var values = _.values(obj.buckets);
+            var sum = _.sum(values);
+            // const sortedValues = _.sortBy(values);
+
+            obj.buckets = _.mapValues(obj.buckets, function (value) {
+              return value / sum;
+            }
+            // function(value) {
+            //   const rank = values.length - _.sortedIndexOf(sortedValues, value);
+            //   if (rank < 5) {
+            //     return value/sum;
+            //   } else {
+            //     return 0;
+            //   }
+            // }
+            );
+
+            return obj;
+          });
+        };
+
+        var rankData = function rankData(data) {
+          return _.map(data, function (obj) {
+
+            var sortedValues = _.sortBy(_.values(obj.buckets));
+
+            obj.buckets = _.mapValues(obj.buckets, function (value) {
+              return _.indexOf(sortedValues, value);
+            });
+
+            return obj;
+          });
+        };
+
+        var convertData = function convertData(from, to, dataList, processingMode) {
           var fragment = getFragment(fragmentType);
           var container = groupData(from, to, fragment, dataList);
-          var data = aggregateData(from, to, fragment, container.data);
+          var agg = aggregateData(from, to, fragment, container);
+          if (_.eq(processingMode, 'normalize')) {
+            agg = normalizeData(agg);
+          } else if (_.eq(processingMode, 'rank')) {
+            agg = rankData(agg);
+          }
+          var allValues = _.flatten(_.map(agg, function (obj) {
+            return _.values(obj.buckets);
+          }));
+          var data = {
+            data: agg,
+            stats: {
+              min: _.min(allValues),
+              max: _.max(allValues)
+            }
+          };
+
           return _extends({}, container, data);
         };
 
