@@ -1,17 +1,16 @@
 {
   "type": "panel",
   "name": "Carpet plot",
-  "id": "petrslavotinek-carpetplot-panel",
+  "id": "eastcirclek-carpetplot-panel",
 
   "info": {
     "description": "Carpet plot panel plugin for grafana",
     "author": {
-      "name": "Petr Slavotinek - ENESA a.s.",
-      "url": "http://www.enesa.cz"
+      "name": "eastcirclek"
     },
     "keywords": ["carpet", "plot", "panel"],
-    "version": "0.0.4",
-    "updated": "2017-09-05",
+    "version": "0.0.1",
+    "updated": "2017-12-01",
     "logos": {
       "small": "src/img/logo.svg",
       "large": "src/img/logo.svg"
@@ -19,7 +18,7 @@
   },
 
   "dependencies": {
-    "grafanaVersion": "4.3.x",
+    "grafanaVersion": "< 4.6",
     "plugins": [ ]
   }
 }

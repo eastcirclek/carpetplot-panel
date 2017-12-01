@@ -1,14 +1,14 @@
 # Carpet plot
 
 Carpet plot plugin for Grafana. It is different from [petraslavotinek/grafana-carpetplot](https://github.com/petrslavotinek/grafana-carpetplot) in that it groups time-series data first by time and then by a tag provided by user. 
-You must group by not only time but also a tag to use this carpet plot plugin.
+You must group by not only time but also a tag to use this carpet plot plugin. Don't forget to specify "ALIAS BY" as below to avoid long tag names.
 ![Carpet plot - Screenshot 1 - Query](https://raw.githubusercontent.com/eastcirclek/grafana-carpetplot/master/dist/src/img/screenshot1.png)
 
 Note that [petraslavotinek/grafana-carpetplot](https://github.com/petrslavotinek/grafana-carpetplot) groups the data first by day and then by a selected fragment of a day (hour / 15 minutes / minute).
 
 #### [eastcirclek/grafana-carpetplot](https://github.com/eastcirclek/grafana-carpetplot)
 
-![Carpet plot - Screenshot 2 - Panel](https://raw.githubusercontent.com/petrslavotinek/grafana-carpetplot/master/dist/src/img/screenshot2.png)
+![Carpet plot - Screenshot 2 - Panel](https://raw.githubusercontent.com/eastcirclek/grafana-carpetplot/master/dist/src/img/screenshot2.png)
 
 #### [petraslavotinek/grafana-carpetplot](https://github.com/petrslavotinek/grafana-carpetplot) 
 
