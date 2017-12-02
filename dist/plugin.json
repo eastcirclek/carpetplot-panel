@@ -1,7 +1,7 @@
 {
   "type": "panel",
   "name": "Carpet plot",
-  "id": "eastcirclek-carpetplot-panel",
+  "id": "grafana-carpetplot-panel",
 
   "info": {
     "description": "Carpet plot panel plugin for grafana",
